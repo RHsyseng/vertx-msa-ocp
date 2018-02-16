@@ -1,10 +1,5 @@
 package com.redhat.refarch.vertx.lambdaair.flights.service;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.uber.jaeger.Configuration;
 import com.uber.jaeger.Span;
@@ -16,10 +11,7 @@ import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Context;
 import io.vertx.core.DeploymentOptions;
-import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
@@ -31,34 +23,34 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.WebClient;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import static io.opentracing.contrib.vertx.ext.web.TracingHandler.CURRENT_SPAN;
 
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
+    private WebClient webClient;
 
     @Override
-    public void init(Vertx vertx, Context context) {
-        super.init(vertx, context);
-    }
-
-    @Override
-    public void start(Future<Void> startFuture) throws Exception {
-        super.start(startFuture);
-
+    public void start() {
+        webClient = WebClient.create(vertx);
         Json.mapper.registerModule(new JavaTimeModule());
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(result -> startWithConfig(startFuture, result));
+        retriever.getConfig(this::startWithConfig);
     }
 
-    private void startWithConfig(Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
             throw new IllegalStateException(configResult.cause());
         }
         mergeIn(null, configResult.result().getMap());
 
-        DeploymentOptions deploymentOptions = new DeploymentOptions().setWorker(true).setMultiThreaded(true);
+        DeploymentOptions deploymentOptions = new DeploymentOptions().setWorker(true);
         vertx.deployVerticle(new FlightSchedulingService(), deploymentOptions, deployResult -> {
             if (deployResult.succeeded()) {
                 Router router = Router.router(vertx);
@@ -68,16 +60,9 @@ public class Vertical extends AbstractVerticle {
                 HttpServer httpServer = vertx.createHttpServer();
                 httpServer.requestHandler(router::accept);
                 int port = config().getInteger("http.port", 8080);
-                httpServer.listen(port, result -> {
-                    if (result.succeeded()) {
-                        startFuture.succeeded();
-                        logger.info("Running http server on port " + result.result().actualPort());
-                    } else {
-                        startFuture.fail(result.cause());
-                    }
-                });
+                httpServer.listen(port);
             } else {
-                startFuture.fail(deployResult.cause());
+                logger.log(Level.SEVERE, "Unable to deploy verticle", deployResult.cause());
             }
         });
     }
@@ -111,8 +96,8 @@ public class Vertical extends AbstractVerticle {
     private void query(RoutingContext routingContext) {
         getActiveSpan(routingContext).setTag("Operation", "Look Up Flights");
 
-        WebClient webClient = WebClient.create(vertx);
-        HttpRequest<Buffer> httpRequest = webClient.getAbs(config().getString("service.airports.baseUrl") + "/airports");
+        HttpRequest<Buffer> httpRequest = webClient
+            .getAbs(config().getString("service.airports.baseUrl") + "/airports");
         HttpServerResponse response = routingContext.response();
         traceOutgoingCall(routingContext, httpRequest);
         httpRequest.send(asyncResult -> {
@@ -122,7 +107,8 @@ public class Vertical extends AbstractVerticle {
                 options.addHeader("date", routingContext.request().getParam("date"));
                 options.addHeader("origin", routingContext.request().getParam("origin"));
                 options.addHeader("destination", routingContext.request().getParam("destination"));
-                vertx.eventBus().<String>send(FlightSchedulingService.class.getName(), asyncResult.result().bodyAsString(), options, reply -> {
+                vertx.eventBus().<String>send(FlightSchedulingService.class.getName(),
+                    asyncResult.result().bodyAsString(), options, reply -> {
                     if (reply.succeeded()) {
                         response.putHeader("Content-Type", "application/json; charset=utf-8");
                         response.end(reply.result().body());
