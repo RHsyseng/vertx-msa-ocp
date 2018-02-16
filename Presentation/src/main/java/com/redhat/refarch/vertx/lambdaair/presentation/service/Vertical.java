@@ -1,20 +1,5 @@
 package com.redhat.refarch.vertx.lambdaair.presentation.service;
 
-import java.net.URISyntaxException;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Airport;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Flight;
@@ -30,9 +15,7 @@ import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Context;
 import io.vertx.core.Handler;
-import io.vertx.core.Vertx;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClientOptions;
@@ -53,6 +36,16 @@ import org.apache.http.client.utils.URIBuilder;
 import rx.Observable;
 import rx.Single;
 
+import java.net.URISyntaxException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
@@ -63,32 +56,25 @@ public class Vertical extends AbstractVerticle {
     private CircuitBreaker circuitBreaker;
 
     @Override
-    public void init(Vertx vertx, Context context) {
-        super.init(vertx, context);
-    }
-
-    @Override
-    public void start(io.vertx.core.Future<Void> startFuture) throws Exception {
-        super.start(startFuture);
-
+    public void start() {
         Json.mapper.registerModule(new JavaTimeModule());
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(result -> startWithConfig(startFuture, result));
+        retriever.getConfig(this::startWithConfig);
     }
 
-    private void startWithConfig(io.vertx.core.Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
             throw new IllegalStateException(configResult.cause());
         }
         mergeIn(null, configResult.result().getMap());
 
-        CircuitBreakerOptions circuitBreakerOptions = new CircuitBreakerOptions();
-        circuitBreakerOptions.setMaxFailures(config().getInteger("pricing.failure.max", 3));
-        circuitBreakerOptions.setTimeout(config().getInteger("pricing.failure.timeout", 1000));
-        circuitBreakerOptions.setFallbackOnFailure(config().getBoolean("pricing.failure.fallback", false));
-        circuitBreakerOptions.setResetTimeout(config().getInteger("pricing.failure.reset", 5000));
+        CircuitBreakerOptions circuitBreakerOptions = new CircuitBreakerOptions()
+            .setMaxFailures(config().getInteger("pricing.failure.max", 3))
+            .setTimeout(config().getInteger("pricing.failure.timeout", 1000))
+            .setFallbackOnFailure(config().getBoolean("pricing.failure.fallback", false))
+            .setResetTimeout(config().getInteger("pricing.failure.reset", 5000));
         circuitBreaker = CircuitBreaker.create("PricingCall", vertx, circuitBreakerOptions);
 
         Configuration.SamplerConfiguration samplerConfiguration = new Configuration.SamplerConfiguration(config().getString("JAEGER_SAMPLER_TYPE"), config().getDouble("JAEGER_SAMPLER_PARAM"), config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
@@ -104,14 +90,7 @@ public class Vertical extends AbstractVerticle {
         HttpServer httpServer = vertx.createHttpServer();
         httpServer.requestHandler(router::accept);
         int port = config().getInteger("http.port", 8080);
-        httpServer.listen(port, result -> {
-            if (result.succeeded()) {
-                startFuture.succeeded();
-                logger.info("Running http server on port " + result.result().actualPort());
-            } else {
-                startFuture.fail(result.cause());
-            }
-        });
+        httpServer.listen(port);
     }
 
     private void mergeIn(String prefix, Map<String, Object> map) {
