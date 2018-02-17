@@ -21,7 +21,6 @@ import io.vertx.core.json.Json;
 
 public class SalesTicketingService extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(SalesTicketingService.class.getName());
-    private static int counter = 1;
 
     private static Map<Integer, Pricing> pricingMap = new HashMap<>();
 
@@ -62,13 +61,6 @@ public class SalesTicketingService extends AbstractVerticle {
     }
 
     private static void price(Message<String> message) {
-        try {
-            logger.info("Wait " + (counter++));
-            Thread.sleep(3000);
-            logger.info("Waited");
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
         Flight flight = Json.decodeValue(message.body(), Flight.class);
         int dateOffset = getDateOffset(flight.getSegments()[0].getDepartureTime());
         int price = 0;
