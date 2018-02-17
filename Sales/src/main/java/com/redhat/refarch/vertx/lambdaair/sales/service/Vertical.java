@@ -30,28 +30,21 @@ public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
     @Override
-    public void init(Vertx vertx, Context context) {
-        super.init(vertx, context);
-    }
-
-    @Override
-    public void start(Future<Void> startFuture) throws Exception {
-        super.start();
-
+    public void start() {
         Json.mapper.registerModule(new JavaTimeModule());
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(result -> startWithConfig(startFuture, result));
+        retriever.getConfig(this::startWithConfig);
     }
 
-    private void startWithConfig(Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
             throw new IllegalStateException(configResult.cause());
         }
         mergeIn(null, configResult.result().getMap());
 
-        DeploymentOptions deploymentOptions = new DeploymentOptions().setWorker(true).setMultiThreaded(true);
+        DeploymentOptions deploymentOptions = new DeploymentOptions().setWorker(true);
         vertx.deployVerticle(new SalesTicketingService(), deploymentOptions, deployResult -> {
             if (deployResult.succeeded()) {
                 Router router = Router.router(vertx);
@@ -61,16 +54,9 @@ public class Vertical extends AbstractVerticle {
                 HttpServer httpServer = vertx.createHttpServer();
                 httpServer.requestHandler(router::accept);
                 int port = config().getInteger("http.port", 8080);
-                httpServer.listen(port, result -> {
-                    if (result.succeeded()) {
-                        startFuture.succeeded();
-                        logger.info("Running http server on port " + result.result().actualPort());
-                    } else {
-                        startFuture.fail(result.cause());
-                    }
-                });
+                httpServer.listen(port);
             } else {
-                startFuture.fail(deployResult.cause());
+                logger.log(Level.SEVERE, "Unable to deploy verticle", deployResult.cause());
             }
         });
 
