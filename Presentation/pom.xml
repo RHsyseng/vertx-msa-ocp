@@ -16,7 +16,7 @@
         <version.vertx>3.4.2.redhat-006</version.vertx>
         <vertx-maven-plugin.version>1.0.13</vertx-maven-plugin.version>
         <vertx.verticle>com.redhat.refarch.vertx.lambdaair.presentation.service.Vertical</vertx.verticle>
-        <fabric8.maven.plugin.version>3.5.30</fabric8.maven.plugin.version>
+        <fabric8.maven.plugin.version>3.5.35</fabric8.maven.plugin.version>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <failOnMissingWebXml>false</failOnMissingWebXml>
