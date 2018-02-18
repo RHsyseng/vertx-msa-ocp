@@ -1,5 +1,20 @@
 package com.redhat.refarch.vertx.lambdaair.presentation.service;
 
+import java.net.URISyntaxException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Airport;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Flight;
@@ -36,16 +51,6 @@ import org.apache.http.client.utils.URIBuilder;
 import rx.Observable;
 import rx.Single;
 
-import java.net.URISyntaxException;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
@@ -53,6 +58,7 @@ public class Vertical extends AbstractVerticle {
 
     private Configuration configuration;
 
+    private WebClient webClient;
     private CircuitBreaker circuitBreaker;
 
     @Override
@@ -69,6 +75,12 @@ public class Vertical extends AbstractVerticle {
             throw new IllegalStateException(configResult.cause());
         }
         mergeIn(null, configResult.result().getMap());
+
+        WebClientOptions options = new WebClientOptions();
+        int threadPoolSize = config().getInteger("pricing.pool.size");
+        logger.fine("Will price in batches of " + threadPoolSize);
+        options.setMaxPoolSize(threadPoolSize);
+        webClient = WebClient.create(vertx, options);
 
         CircuitBreakerOptions circuitBreakerOptions = new CircuitBreakerOptions()
             .setMaxFailures(config().getInteger("pricing.failure.max", 3))
@@ -168,7 +180,7 @@ public class Vertical extends AbstractVerticle {
 
     private Observable<Airport[]> getAirports(RoutingContext routingContext) {
         String uri = config().getString("service.airports.baseUrl") + "/airports";
-        HttpRequest<Buffer> httpRequest = WebClient.create(vertx).getAbs(uri);
+        HttpRequest<Buffer> httpRequest = webClient.getAbs(uri);
         traceOutgoingCall(routingContext, httpRequest);
         return httpRequest.rxSend().map(httpResponse -> {
             if (httpResponse.statusCode() < 300) {
@@ -186,7 +198,6 @@ public class Vertical extends AbstractVerticle {
             uriBuilder.addParameter("date", queryParams.get(date));
             uriBuilder.addParameter("origin", queryParams.get(origin));
             uriBuilder.addParameter("destination", queryParams.get(destination));
-            WebClient webClient = WebClient.create(vertx);
             HttpRequest<Buffer> httpRequest = webClient.getAbs(uriBuilder.toString());
             traceOutgoingCall(routingContext, httpRequest);
             return httpRequest.rxSend().map(httpResponse -> {
@@ -205,11 +216,7 @@ public class Vertical extends AbstractVerticle {
     }
 
     private Observable<List<Itinerary>> priceFlights(RoutingContext routingContext, Flight[] flights) {
-        WebClientOptions options = new WebClientOptions();
-        int threadPoolSize = config().getInteger("pricing.pool.size");
-        logger.fine("Will price in batches of " + threadPoolSize);
-        options.setMaxPoolSize(threadPoolSize);
-        HttpRequest<Buffer> request = WebClient.create(vertx, options).postAbs(config().getString("service.sales.baseUrl") + "/price");
+        HttpRequest<Buffer> request = webClient.postAbs(config().getString("service.sales.baseUrl") + "/price");
         traceOutgoingCall(routingContext, request);
         List<Observable<Itinerary>> itineraryObservables = new ArrayList<>();
         for (Flight flight : flights) {
