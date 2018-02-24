@@ -62,15 +62,15 @@ public class Vertical extends AbstractVerticle {
     private CircuitBreaker circuitBreaker;
 
     @Override
-    public void start() {
+    public void start(io.vertx.core.Future<Void> startFuture) {
         Json.mapper.registerModule(new JavaTimeModule());
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(this::startWithConfig);
+        retriever.getConfig(result -> startWithConfig(startFuture, result));
     }
 
-    private void startWithConfig(AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(io.vertx.core.Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
             throw new IllegalStateException(configResult.cause());
         }
@@ -102,7 +102,14 @@ public class Vertical extends AbstractVerticle {
         HttpServer httpServer = vertx.createHttpServer();
         httpServer.requestHandler(router::accept);
         int port = config().getInteger("http.port", 8080);
-        httpServer.listen(port);
+        httpServer.listen(port, result -> {
+            if (result.succeeded()) {
+                startFuture.succeeded();
+                logger.info("Running http server on port " + result.result().actualPort());
+            } else {
+                startFuture.fail(result.cause());
+            }
+        });
     }
 
     private void mergeIn(String prefix, Map<String, Object> map) {

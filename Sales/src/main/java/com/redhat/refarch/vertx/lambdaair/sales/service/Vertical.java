@@ -13,10 +13,8 @@ import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Context;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpServer;
@@ -30,15 +28,15 @@ public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
     @Override
-    public void start() {
+    public void start(Future<Void> startFuture) {
         Json.mapper.registerModule(new JavaTimeModule());
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(this::startWithConfig);
+        retriever.getConfig(result -> startWithConfig(startFuture, result));
     }
 
-    private void startWithConfig(AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
             throw new IllegalStateException(configResult.cause());
         }
@@ -54,9 +52,16 @@ public class Vertical extends AbstractVerticle {
                 HttpServer httpServer = vertx.createHttpServer();
                 httpServer.requestHandler(router::accept);
                 int port = config().getInteger("http.port", 8080);
-                httpServer.listen(port);
+                httpServer.listen(port, result -> {
+                    if (result.succeeded()) {
+                        startFuture.succeeded();
+                        logger.info("Running http server on port " + result.result().actualPort());
+                    } else {
+                        startFuture.fail(result.cause());
+                    }
+                });
             } else {
-                logger.log(Level.SEVERE, "Unable to deploy verticle", deployResult.cause());
+                startFuture.fail(deployResult.cause());
             }
         });
 

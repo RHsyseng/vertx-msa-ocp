@@ -1,5 +1,10 @@
 package com.redhat.refarch.vertx.lambdaair.airports.service;
 
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Locale;
+import java.util.logging.Logger;
+
 import com.redhat.refarch.vertx.lambdaair.airports.model.Airport;
 import com.uber.jaeger.Configuration;
 import com.uber.jaeger.Span;
@@ -9,6 +14,9 @@ import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Context;
+import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.Json;
@@ -16,35 +24,30 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 
-import java.io.IOException;
-import java.util.Collection;
-import java.util.Locale;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
-    static {
+    @Override
+    public void init(Vertx vertx, Context context) {
+        super.init(vertx, context);
         try {
             AirportsService.loadAirports();
         } catch (IOException e) {
-            logger.log(Level.SEVERE, "Unable to load the airports", e);
+            throw new IllegalStateException(e);
         }
     }
 
-
     @Override
-    public void start() {
+    public void start(Future<Void> startFuture) {
         ConfigStoreOptions store = new ConfigStoreOptions();
         store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
         ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(this::startWithConfig);
+        retriever.getConfig(result -> startWithConfig(startFuture, result));
     }
 
-    private void startWithConfig(AsyncResult<JsonObject> configResult) {
+    private void startWithConfig(Future<Void> startFuture, AsyncResult<JsonObject> configResult) {
         if (configResult.failed()) {
-            throw new IllegalStateException(configResult.cause());
+            startFuture.fail(configResult.cause());
         }
         Router router = Router.router(vertx);
         router.get("/health").handler(routingContext -> routingContext.response().end("OK"));
@@ -53,28 +56,35 @@ public class Vertical extends AbstractVerticle {
         setupTracing(router, configResult.result());
         HttpServer httpServer = vertx.createHttpServer();
         httpServer.requestHandler(router::accept);
-        int port = configResult.result().getInteger("http.port", 8080);
-        httpServer.listen(port);
+        int port = config().getInteger("http.port", 8080);
+        httpServer.listen(port, result -> {
+            if (result.succeeded()) {
+                startFuture.succeeded();
+                logger.info("Running http server on port " + result.result().actualPort());
+            } else {
+                startFuture.fail(result.cause());
+            }
+        });
     }
 
     private void setupTracing(Router router, JsonObject config) {
         Configuration.SamplerConfiguration samplerConfiguration =
-            new Configuration.SamplerConfiguration(
-                config.getString("JAEGER_SAMPLER_TYPE"),
-                config.getDouble("JAEGER_SAMPLER_PARAM"),
-                config.getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
+                new Configuration.SamplerConfiguration(
+                        config.getString("JAEGER_SAMPLER_TYPE"),
+                        config.getDouble("JAEGER_SAMPLER_PARAM"),
+                        config.getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
 
         Configuration.ReporterConfiguration reporterConfiguration =
-            new Configuration.ReporterConfiguration(
-                config.getBoolean("JAEGER_REPORTER_LOG_SPANS"),
-                config.getString("JAEGER_AGENT_HOST"),
-                config.getInteger("JAEGER_AGENT_PORT"),
-                config.getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"),
-                config.getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
+                new Configuration.ReporterConfiguration(
+                        config.getBoolean("JAEGER_REPORTER_LOG_SPANS"),
+                        config.getString("JAEGER_AGENT_HOST"),
+                        config.getInteger("JAEGER_AGENT_PORT"),
+                        config.getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"),
+                        config.getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
 
         Configuration configuration = new Configuration(
-            config.getString("JAEGER_SERVICE_NAME"),
-            samplerConfiguration, reporterConfiguration);
+                config.getString("JAEGER_SERVICE_NAME"),
+                samplerConfiguration, reporterConfiguration);
 
         TracingHandler tracingHandler = new TracingHandler(configuration.getTracer());
         router.route().order(-1).handler(tracingHandler).failureHandler(tracingHandler);
