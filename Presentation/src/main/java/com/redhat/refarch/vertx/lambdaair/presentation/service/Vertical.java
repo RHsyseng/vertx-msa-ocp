@@ -54,8 +54,6 @@ import rx.Single;
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
 
-    private static int counter = 1;
-
     private Configuration configuration;
 
     private WebClient webClient;
@@ -78,7 +76,7 @@ public class Vertical extends AbstractVerticle {
 
         WebClientOptions options = new WebClientOptions();
         int threadPoolSize = config().getInteger("pricing.pool.size");
-        logger.fine("Will price in batches of " + threadPoolSize);
+        logger.fine("Will price flights with a thread pool size of " + threadPoolSize);
         options.setMaxPoolSize(threadPoolSize);
         webClient = WebClient.create(vertx, options);
 
@@ -228,9 +226,7 @@ public class Vertical extends AbstractVerticle {
         List<Observable<Itinerary>> itineraryObservables = new ArrayList<>();
         for (Flight flight : flights) {
             Handler<Future<Itinerary>> priceFlightHandler = future -> {
-                logger.info("Calling " + (counter++));
                 request.rxSendJson(flight).subscribe(httpResponse -> {
-                    logger.info("Response");
                     future.complete(httpResponse.bodyAsJson(Itinerary.class));
                 }, future::fail);
             };
