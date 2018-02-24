@@ -73,7 +73,7 @@ Login successful.
 Create a new project to deploy this reference architecture application:
 
 ````
-$ oc new-project lambdaair --display-name="Lambda Air" --description="WildFly Swarm Microservices on Red Hat OpenShift Container Platform 3"
+$ oc new-project lambdaair --display-name="Lambda Air" --description="Vert.x Microservices on Red Hat OpenShift Container Platform 3"
 Now using project "lambdaair" on server "https://ocp-master1.xxx.example.com:8443".
 ````
 
@@ -201,7 +201,7 @@ jaeger-query   jaeger-query-lambdaair.ocp.xxx.example.com             jaeger-que
 Use the displayed URL to access the console from a browser and verify that it works correctly.
 
 ## Service Deployment
-To deploy a WildFly Swarm service, use *Maven* to build the project, with the *fabric8:deploy* target for the *openshift* profile to deploy the built image to OpenShift. For convenience, an aggregator *pom* file has been provided at the root of the project that delegates the same Maven build to all 6 configured modules:
+To deploy a Vert.x service, use *Maven* to build the project, with the *fabric8:deploy* target for the *openshift* profile to deploy the built image to OpenShift. For convenience, an aggregator *pom* file has been provided at the root of the project that delegates the same Maven build to all 6 configured modules:
 
 ````
 $ mvn clean fabric8:deploy -Popenshift
@@ -322,28 +322,44 @@ Wait until the second version of the pod reaches the running state. Then return 
 If the IP address received from your browser ends in an odd number, the JavaScript filters pricing calls and sends them to version B of the *sales* service instead. This will be clear in the *edge* log:
 
 ````
-$ oc logs edge-2-fzgg0
-...
-... INFO  [....impl.JavaScriptMapper] (default task-4) Rerouting to B instance for IP Address 10.3.116.235
-... INFO  [....impl.JavaScriptMapper] (default task-7) Rerouting to B instance for IP Address 10.3.116.235
-... INFO  [....impl.JavaScriptMapper] (default task-8) Rerouting to B instance for IP Address 10.3.116.235
-... INFO  [....impl.JavaScriptMapper] (default task-11) Rerouting to B instance for IP Address 10.3.116.235
+$ oc logs edge-2-67g55 | grep Rerouting
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
+INFO: Rerouting to B instance for IP Address 10.3.116.25
 ````
 
 In this case, the logs from *sales2* will show tickets being priced with a modified algorithm:
 
 ````
-$ oc logs sales2-1-36hww
-... INFO  [...service.Controller] (default task-27) Priced ticket at 463
-... INFO  [...service.Controller] (default task-27) Priced ticket at 425
-... INFO  [...service.Controller] (default task-27) Priced ticket at 407
-... INFO  [...service.Controller] (default task-27) Priced ticket at 549
-... INFO  [...service.Controller] (default task-27) Priced ticket at 509
-... INFO  [...service.Controller] (default task-27) Priced ticket at 598
-... INFO  [...service.Controller] (default task-27) Priced ticket at 610
+$ oc logs sales2-1-667gw | grep Priced
+FINE: Priced ticket at 135
+FINE: Priced ticket at 169
+FINE: Priced ticket at 169
+FINE: Priced ticket at 169
+FINE: Priced ticket at 391
+FINE: Priced ticket at 414
+FINE: Priced ticket at 324
+FINE: Priced ticket at 473
+FINE: Priced ticket at 559
+FINE: Priced ticket at 597
+FINE: Priced ticket at 250
+FINE: Priced ticket at 237
+FINE: Priced ticket at 629
+FINE: Priced ticket at 283
 ````
 
-If that is not the case and your IP address ends in an even number, you will not see any logging at the *INFO* level by the JavaScript and need to turn up the verbosity to clearly see it be executed. In this case, you can change the filter criteria to send IP addresses with an even digit to the new version of pricing algorithm, instead of the odd ones.
+If that is not the case and your IP address ends in an even number, you will see other log statements depending on the configured verbosity. In this case, you can change the filter criteria to send IP addresses with an even digit to the new version of pricing algorithm, instead of the odd ones.
 
 ````
 $ cat /mnt/vertx/edge/routing.js
