@@ -3,6 +3,7 @@ package com.redhat.refarch.vertx.lambdaair.flights.service;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.uber.jaeger.Configuration;
 import com.uber.jaeger.Span;
+import io.opentracing.Tracer;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
 import io.opentracing.propagation.Format;
 import io.opentracing.propagation.TextMapInjectAdapter;
@@ -33,6 +34,9 @@ import static io.opentracing.contrib.vertx.ext.web.TracingHandler.CURRENT_SPAN;
 
 public class Vertical extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Vertical.class.getName());
+
+    private Configuration configuration;
+
     private WebClient webClient;
 
     @Override
@@ -50,6 +54,24 @@ public class Vertical extends AbstractVerticle {
             startFuture.fail(configResult.cause());
         }
         mergeIn(null, configResult.result().getMap());
+
+        Configuration.SamplerConfiguration samplerConfiguration =
+                new Configuration.SamplerConfiguration(
+                        config().getString("JAEGER_SAMPLER_TYPE"),
+                        config().getDouble("JAEGER_SAMPLER_PARAM"),
+                        config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
+
+        Configuration.ReporterConfiguration reporterConfiguration =
+                new Configuration.ReporterConfiguration(
+                        config().getBoolean("JAEGER_REPORTER_LOG_SPANS"),
+                        config().getString("JAEGER_AGENT_HOST"),
+                        config().getInteger("JAEGER_AGENT_PORT"),
+                        config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"),
+                        config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
+
+        configuration = new Configuration(
+                config().getString("JAEGER_SERVICE_NAME"),
+                samplerConfiguration, reporterConfiguration);
 
         DeploymentOptions deploymentOptions = new DeploymentOptions().setWorker(true);
         vertx.deployVerticle(new FlightSchedulingService(), deploymentOptions, deployResult -> {
@@ -94,9 +116,6 @@ public class Vertical extends AbstractVerticle {
     }
 
     private void setupTracing(Router router) {
-        Configuration.SamplerConfiguration samplerConfiguration = new Configuration.SamplerConfiguration(config().getString("JAEGER_SAMPLER_TYPE"), config().getDouble("JAEGER_SAMPLER_PARAM"), config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
-        Configuration.ReporterConfiguration reporterConfiguration = new Configuration.ReporterConfiguration(config().getBoolean("JAEGER_REPORTER_LOG_SPANS"), config().getString("JAEGER_AGENT_HOST"), config().getInteger("JAEGER_AGENT_PORT"), config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"), config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
-        Configuration configuration = new Configuration(config().getString("JAEGER_SERVICE_NAME"), samplerConfiguration, reporterConfiguration);
         TracingHandler tracingHandler = new TracingHandler(configuration.getTracer());
         router.route().order(-1).handler(tracingHandler).failureHandler(tracingHandler);
     }
@@ -137,14 +156,9 @@ public class Vertical extends AbstractVerticle {
     }
 
     private void traceOutgoingCall(RoutingContext routingContext, HttpRequest<Buffer> httpRequest) {
-        Object object = routingContext.get(CURRENT_SPAN);
-        if (object instanceof io.opentracing.Span) {
-            io.opentracing.Span span = (io.opentracing.Span) object;
-
-            Configuration.SamplerConfiguration samplerConfiguration = new Configuration.SamplerConfiguration(config().getString("JAEGER_SAMPLER_TYPE"), config().getDouble("JAEGER_SAMPLER_PARAM"), config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
-            Configuration.ReporterConfiguration reporterConfiguration = new Configuration.ReporterConfiguration(config().getBoolean("JAEGER_REPORTER_LOG_SPANS"), config().getString("JAEGER_AGENT_HOST"), config().getInteger("JAEGER_AGENT_PORT"), config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"), config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
-            Configuration configuration = new Configuration(config().getString("JAEGER_SERVICE_NAME"), samplerConfiguration, reporterConfiguration);
-            io.opentracing.Tracer tracer = configuration.getTracer();
+        Span span = getActiveSpan(routingContext);
+        if (span != null) {
+            Tracer tracer = configuration.getTracer();
             Map<String, String> headerAdditions = new HashMap<>();
             tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
             httpRequest.headers().addAll(headerAdditions);

@@ -22,7 +22,7 @@ import com.redhat.refarch.vertx.lambdaair.presentation.model.FlightSegment;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Itinerary;
 import com.uber.jaeger.Configuration;
 import com.uber.jaeger.Span;
-import io.opentracing.SpanContext;
+import io.opentracing.Tracer;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
 import io.opentracing.propagation.Format;
 import io.opentracing.propagation.TextMapInjectAdapter;
@@ -87,9 +87,23 @@ public class Vertical extends AbstractVerticle {
             .setResetTimeout(config().getInteger("pricing.failure.reset", 5000));
         circuitBreaker = CircuitBreaker.create("PricingCall", vertx, circuitBreakerOptions);
 
-        Configuration.SamplerConfiguration samplerConfiguration = new Configuration.SamplerConfiguration(config().getString("JAEGER_SAMPLER_TYPE"), config().getDouble("JAEGER_SAMPLER_PARAM"), config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
-        Configuration.ReporterConfiguration reporterConfiguration = new Configuration.ReporterConfiguration(config().getBoolean("JAEGER_REPORTER_LOG_SPANS"), config().getString("JAEGER_AGENT_HOST"), config().getInteger("JAEGER_AGENT_PORT"), config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"), config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
-        configuration = new Configuration(config().getString("JAEGER_SERVICE_NAME"), samplerConfiguration, reporterConfiguration);
+        Configuration.SamplerConfiguration samplerConfiguration =
+                new Configuration.SamplerConfiguration(
+                        config().getString("JAEGER_SAMPLER_TYPE"),
+                        config().getDouble("JAEGER_SAMPLER_PARAM"),
+                        config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
+
+        Configuration.ReporterConfiguration reporterConfiguration =
+                new Configuration.ReporterConfiguration(
+                        config().getBoolean("JAEGER_REPORTER_LOG_SPANS"),
+                        config().getString("JAEGER_AGENT_HOST"),
+                        config().getInteger("JAEGER_AGENT_PORT"),
+                        config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"),
+                        config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
+
+        configuration = new Configuration(
+                config().getString("JAEGER_SERVICE_NAME"),
+                samplerConfiguration, reporterConfiguration);
 
         Router router = Router.router(vertx);
         router.get("/health").handler(routingContext -> routingContext.response().end("OK"));
@@ -247,10 +261,13 @@ public class Vertical extends AbstractVerticle {
     }
 
     private void traceOutgoingCall(RoutingContext routingContext, HttpRequest<Buffer> httpRequest) {
-        SpanContext spanContext = getActiveSpan(routingContext).context();
-        Map<String, String> headerAdditions = new HashMap<>();
-        configuration.getTracer().inject(spanContext, Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
-        headerAdditions.forEach(httpRequest.headers()::add);
+        Span span = getActiveSpan(routingContext);
+        if (span != null) {
+            Tracer tracer = configuration.getTracer();
+            Map<String, String> headerAdditions = new HashMap<>();
+            tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
+            headerAdditions.forEach(httpRequest.headers()::add);
+        }
     }
 
     private static void populateFormattedTimes(Flight[] flights, Map<String, Airport> airports) {

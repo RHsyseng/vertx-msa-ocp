@@ -86,9 +86,24 @@ public class Vertical extends AbstractVerticle {
     }
 
     private void setupTracing(Router router) {
-        Configuration.SamplerConfiguration samplerConfiguration = new Configuration.SamplerConfiguration(config().getString("JAEGER_SAMPLER_TYPE"), config().getDouble("JAEGER_SAMPLER_PARAM"), config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
-        Configuration.ReporterConfiguration reporterConfiguration = new Configuration.ReporterConfiguration(config().getBoolean("JAEGER_REPORTER_LOG_SPANS"), config().getString("JAEGER_AGENT_HOST"), config().getInteger("JAEGER_AGENT_PORT"), config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"), config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
-        Configuration configuration = new Configuration(config().getString("JAEGER_SERVICE_NAME"), samplerConfiguration, reporterConfiguration);
+        Configuration.SamplerConfiguration samplerConfiguration =
+                new Configuration.SamplerConfiguration(
+                        config().getString("JAEGER_SAMPLER_TYPE"),
+                        config().getDouble("JAEGER_SAMPLER_PARAM"),
+                        config().getString("JAEGER_SAMPLER_MANAGER_HOST_PORT"));
+
+        Configuration.ReporterConfiguration reporterConfiguration =
+                new Configuration.ReporterConfiguration(
+                        config().getBoolean("JAEGER_REPORTER_LOG_SPANS"),
+                        config().getString("JAEGER_AGENT_HOST"),
+                        config().getInteger("JAEGER_AGENT_PORT"),
+                        config().getInteger("JAEGER_REPORTER_FLUSH_INTERVAL"),
+                        config().getInteger("JAEGER_REPORTER_MAX_QUEUE_SIZE"));
+
+        Configuration configuration = new Configuration(
+                config().getString("JAEGER_SERVICE_NAME"),
+                samplerConfiguration, reporterConfiguration);
+
         TracingHandler tracingHandler = new TracingHandler(configuration.getTracer());
         router.route().order(-1).handler(tracingHandler).failureHandler(tracingHandler);
     }
