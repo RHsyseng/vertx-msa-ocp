@@ -56,7 +56,7 @@ public class Vertical extends AbstractVerticle {
         setupTracing(router, configResult.result());
         HttpServer httpServer = vertx.createHttpServer();
         httpServer.requestHandler(router::accept);
-        int port = config().getInteger("http.port", 8080);
+        int port = configResult.result().getInteger("http.port", 8080);
         httpServer.listen(port, result -> {
             if (result.succeeded()) {
                 startFuture.succeeded();
