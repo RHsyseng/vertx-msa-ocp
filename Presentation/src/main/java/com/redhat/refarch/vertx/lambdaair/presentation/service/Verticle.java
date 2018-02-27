@@ -51,8 +51,8 @@ import org.apache.http.client.utils.URIBuilder;
 import rx.Observable;
 import rx.Single;
 
-public class Vertical extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+public class Verticle extends AbstractVerticle {
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     private Configuration configuration;
 
@@ -154,7 +154,7 @@ public class Vertical extends AbstractVerticle {
     private void getAirportCodes(RoutingContext routingContext) {
         getActiveSpan(routingContext).setTag("Operation", "Look Up Airport Codes");
         getAirports(routingContext).subscribe(airports -> {
-            List<String> airportDescriptors = Arrays.stream(airports).map(Vertical::mapAirportCodes).collect(Collectors.toList());
+            List<String> airportDescriptors = Arrays.stream(airports).map(Verticle::mapAirportCodes).collect(Collectors.toList());
             HttpServerResponse response = routingContext.response();
             response.putHeader("Content-Type", "application/json; charset=utf-8");
             response.end(Json.encode(airportDescriptors));

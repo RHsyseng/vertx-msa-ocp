@@ -24,8 +24,8 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class Vertical extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+public class Verticle extends AbstractVerticle {
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     private MappingConfiguration mapping = new MappingConfiguration();
     private WebClient client;

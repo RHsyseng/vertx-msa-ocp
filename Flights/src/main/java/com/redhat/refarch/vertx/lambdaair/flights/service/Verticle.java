@@ -32,8 +32,8 @@ import java.util.logging.Logger;
 
 import static io.opentracing.contrib.vertx.ext.web.TracingHandler.CURRENT_SPAN;
 
-public class Vertical extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+public class Verticle extends AbstractVerticle {
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     private Configuration configuration;
 

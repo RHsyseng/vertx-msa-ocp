@@ -24,8 +24,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 
-public class Vertical extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+public class Verticle extends AbstractVerticle {
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     @Override
     public void init(Vertx vertx, Context context) {

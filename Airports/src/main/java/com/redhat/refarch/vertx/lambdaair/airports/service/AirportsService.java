@@ -18,7 +18,7 @@ import com.redhat.refarch.vertx.lambdaair.airports.model.Airport;
 import com.redhat.refarch.vertx.lambdaair.airports.model.Coordinates;
 
 public class AirportsService {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     private static Map<String, Airport> airports = new HashMap<>();
 

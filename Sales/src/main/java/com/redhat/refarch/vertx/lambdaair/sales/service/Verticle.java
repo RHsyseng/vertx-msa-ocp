@@ -24,8 +24,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 
-public class Vertical extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+public class Verticle extends AbstractVerticle {
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     @Override
     public void start(Future<Void> startFuture) {
@@ -47,7 +47,7 @@ public class Vertical extends AbstractVerticle {
             if (deployResult.succeeded()) {
                 Router router = Router.router(vertx);
                 router.get("/health").handler(routingContext -> routingContext.response().end("OK"));
-                router.post("/price").handler(Vertical.this::price);
+                router.post("/price").handler(Verticle.this::price);
                 setupTracing(router);
                 HttpServer httpServer = vertx.createHttpServer();
                 httpServer.requestHandler(router::accept);

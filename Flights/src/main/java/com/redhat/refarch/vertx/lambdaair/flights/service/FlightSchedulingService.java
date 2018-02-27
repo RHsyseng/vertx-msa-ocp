@@ -30,7 +30,7 @@ import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.Json;
 
 public class FlightSchedulingService extends AbstractVerticle {
-    private static Logger logger = Logger.getLogger(Vertical.class.getName());
+    private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     private static DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd");
 
