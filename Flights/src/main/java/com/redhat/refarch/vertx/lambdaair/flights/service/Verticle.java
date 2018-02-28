@@ -2,11 +2,13 @@ package com.redhat.refarch.vertx.lambdaair.flights.service;
 
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.uber.jaeger.Configuration;
-import com.uber.jaeger.Span;
+import io.opentracing.Span;
 import io.opentracing.Tracer;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
+import io.opentracing.contrib.vertx.ext.web.WebSpanDecorator;
 import io.opentracing.propagation.Format;
 import io.opentracing.propagation.TextMapInjectAdapter;
+import io.opentracing.tag.Tags;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
@@ -16,6 +18,7 @@ import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.DeliveryOptions;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.Json;
@@ -23,6 +26,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpRequest;
+import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 
 import java.util.HashMap;
@@ -123,12 +127,13 @@ public class Verticle extends AbstractVerticle {
     private void query(RoutingContext routingContext) {
         getActiveSpan(routingContext).setTag("Operation", "Look Up Flights");
 
-        HttpRequest<Buffer> httpRequest = webClient
-            .getAbs(config().getString("service.airports.baseUrl") + "/airports");
+        String url = config().getString("service.airports.baseUrl") + "/airports";
+        HttpRequest<Buffer> httpRequest = webClient.getAbs(url);
+        Span childSpan = traceOutgoingCall(httpRequest, routingContext, HttpMethod.GET, url);
         HttpServerResponse response = routingContext.response();
-        traceOutgoingCall(routingContext, httpRequest);
         httpRequest.send(asyncResult -> {
             if (asyncResult.succeeded()) {
+                closeTracingSpan(childSpan, asyncResult.result());
                 logger.fine("Got code " + asyncResult.result().statusCode());
                 DeliveryOptions options = new DeliveryOptions();
                 options.addHeader("date", routingContext.request().getParam("date"));
@@ -144,7 +149,9 @@ public class Verticle extends AbstractVerticle {
                     }
                 });
             } else {
-                handleExceptionResponse(response, asyncResult.cause());
+                Throwable throwable = asyncResult.cause();
+                closeTracingSpan(childSpan, throwable);
+                handleExceptionResponse(response, throwable);
             }
         });
     }
@@ -155,14 +162,36 @@ public class Verticle extends AbstractVerticle {
             response.setStatusCode(500).setStatusMessage(throwable.getMessage()).end();
     }
 
-    private void traceOutgoingCall(RoutingContext routingContext, HttpRequest<Buffer> httpRequest) {
-        Span span = getActiveSpan(routingContext);
-        if (span != null) {
-            Tracer tracer = configuration.getTracer();
-            Map<String, String> headerAdditions = new HashMap<>();
-            tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
-            httpRequest.headers().addAll(headerAdditions);
+    private Span traceOutgoingCall(HttpRequest<Buffer> httpRequest, RoutingContext routingContext, HttpMethod method, String url) {
+        Tracer tracer = configuration.getTracer();
+        Tracer.SpanBuilder spanBuilder = tracer.buildSpan("Outgoing HTTP request");
+        Span activeSpan = getActiveSpan(routingContext);
+        spanBuilder = spanBuilder.asChildOf(activeSpan);
+        Span span = spanBuilder.start();
+        Tags.SPAN_KIND.set(span, Tags.SPAN_KIND_CLIENT);
+        Tags.HTTP_URL.set(span, url);
+        Tags.HTTP_METHOD.set(span, method.name());
+
+        Map<String, String> headerAdditions = new HashMap<>();
+        tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
+        headerAdditions.forEach(httpRequest.headers()::add);
+
+        return span;
+    }
+
+    private void closeTracingSpan(Span span, HttpResponse<Buffer> httpResponse) {
+        int status = httpResponse.statusCode();
+        Tags.HTTP_STATUS.set(span, status);
+        if (status >= 400) {
+            Tags.ERROR.set(span, true);
         }
+        span.finish();
+    }
+
+    private void closeTracingSpan(Span span, Throwable throwable) {
+        Tags.ERROR.set(span, true);
+        span.log(WebSpanDecorator.StandardTags.exceptionLogs(throwable));
+        span.finish();
     }
 
     private Span getActiveSpan(RoutingContext routingContext) {

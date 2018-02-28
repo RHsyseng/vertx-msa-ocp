@@ -40,12 +40,12 @@
         <dependency>
             <groupId>com.uber.jaeger</groupId>
             <artifactId>jaeger-core</artifactId>
-            <version>0.21.0</version>
+            <version>0.24.0</version>
         </dependency>
         <dependency>
             <groupId>io.opentracing.contrib</groupId>
             <artifactId>opentracing-vertx-web</artifactId>
-            <version>0.0.1</version>
+            <version>0.1.0</version>
         </dependency>
 
         <!--To support Java 8 Date format serialization-->

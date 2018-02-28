@@ -21,16 +21,19 @@ import com.redhat.refarch.vertx.lambdaair.presentation.model.Flight;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.FlightSegment;
 import com.redhat.refarch.vertx.lambdaair.presentation.model.Itinerary;
 import com.uber.jaeger.Configuration;
-import com.uber.jaeger.Span;
+import io.opentracing.Span;
 import io.opentracing.Tracer;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
+import io.opentracing.contrib.vertx.ext.web.WebSpanDecorator;
 import io.opentracing.propagation.Format;
 import io.opentracing.propagation.TextMapInjectAdapter;
+import io.opentracing.tag.Tags;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClientOptions;
@@ -45,6 +48,7 @@ import io.vertx.rxjava.core.http.HttpServerResponse;
 import io.vertx.rxjava.ext.web.Router;
 import io.vertx.rxjava.ext.web.RoutingContext;
 import io.vertx.rxjava.ext.web.client.HttpRequest;
+import io.vertx.rxjava.ext.web.client.HttpResponse;
 import io.vertx.rxjava.ext.web.client.WebClient;
 import io.vertx.rxjava.ext.web.handler.StaticHandler;
 import org.apache.http.client.utils.URIBuilder;
@@ -171,11 +175,11 @@ public class Verticle extends AbstractVerticle {
         querySpan.setBaggageItem("forwarded-for", routingContext.request().getHeader("x-forwarded-for"));
         MultiMap queryParams = routingContext.request().params();
         Observable<Airport[]> airportsObservable = getAirports(routingContext);
-        Observable<Flight[]> flightsObservable = airportsObservable.concatMap(airports -> getFlights(routingContext, airports, "departureDate", "origin", "destination"));
-        Observable<List<Itinerary>> itinerariesObservable = flightsObservable.concatMap(flights -> priceFlights(routingContext, flights));
+        Observable<Flight[]> flightsObservable = airportsObservable.flatMap(airports -> getFlights(routingContext, airports, "departureDate", "origin", "destination"));
+        Observable<List<Itinerary>> itinerariesObservable = flightsObservable.flatMap(flights -> priceFlights(routingContext, flights));
         if (queryParams.get("returnDate") != null) {
-            Observable<Flight[]> returnFlightsObservable = airportsObservable.concatMap(airports -> getFlights(routingContext, airports, "returnDate", "destination", "origin"));
-            Observable<List<Itinerary>> returnItinerariesObservable = returnFlightsObservable.concatMap(flights -> priceFlights(routingContext, flights));
+            Observable<Flight[]> returnFlightsObservable = airportsObservable.flatMap(airports -> getFlights(routingContext, airports, "returnDate", "destination", "origin"));
+            Observable<List<Itinerary>> returnItinerariesObservable = returnFlightsObservable.flatMap(flights -> priceFlights(routingContext, flights));
             itinerariesObservable = itinerariesObservable.zipWith(returnItinerariesObservable, (departureItineraries, returnItineraries) -> {
                 List<Itinerary> itineraries = new ArrayList<>();
                 for (Itinerary departingItinerary : departureItineraries) {
@@ -198,10 +202,11 @@ public class Verticle extends AbstractVerticle {
     }
 
     private Observable<Airport[]> getAirports(RoutingContext routingContext) {
-        String uri = config().getString("service.airports.baseUrl") + "/airports";
-        HttpRequest<Buffer> httpRequest = webClient.getAbs(uri);
-        traceOutgoingCall(routingContext, httpRequest);
+        String url = config().getString("service.airports.baseUrl") + "/airports";
+        HttpRequest<Buffer> httpRequest = webClient.getAbs(url);
+        Span span = traceOutgoingCall(httpRequest, routingContext, HttpMethod.GET, url);
         return httpRequest.rxSend().map(httpResponse -> {
+            closeTracingSpan(span, httpResponse);
             if (httpResponse.statusCode() < 300) {
                 return httpResponse.bodyAsJson(Airport[].class);
             } else {
@@ -217,9 +222,11 @@ public class Verticle extends AbstractVerticle {
             uriBuilder.addParameter("date", queryParams.get(date));
             uriBuilder.addParameter("origin", queryParams.get(origin));
             uriBuilder.addParameter("destination", queryParams.get(destination));
-            HttpRequest<Buffer> httpRequest = webClient.getAbs(uriBuilder.toString());
-            traceOutgoingCall(routingContext, httpRequest);
+            String url = uriBuilder.toString();
+            HttpRequest<Buffer> httpRequest = webClient.getAbs(url);
+            Span span = traceOutgoingCall(httpRequest, routingContext, HttpMethod.GET, url);
             return httpRequest.rxSend().map(httpResponse -> {
+                closeTracingSpan(span, httpResponse);
                 if (httpResponse.statusCode() < 300) {
                     Flight[] flights = httpResponse.bodyAsJson(Flight[].class);
                     Map<String, Airport> airportMap = Arrays.stream(airports).collect(Collectors.toMap(Airport::getCode, airport -> airport));
@@ -235,14 +242,19 @@ public class Verticle extends AbstractVerticle {
     }
 
     private Observable<List<Itinerary>> priceFlights(RoutingContext routingContext, Flight[] flights) {
-        HttpRequest<Buffer> request = webClient.postAbs(config().getString("service.sales.baseUrl") + "/price");
-        traceOutgoingCall(routingContext, request);
+        String url = config().getString("service.sales.baseUrl") + "/price";
         List<Observable<Itinerary>> itineraryObservables = new ArrayList<>();
         for (Flight flight : flights) {
             Handler<Future<Itinerary>> priceFlightHandler = future -> {
+                HttpRequest<Buffer> request = webClient.postAbs(url);
+                Span span = traceOutgoingCall(request, routingContext, HttpMethod.POST, url);
                 request.rxSendJson(flight).subscribe(httpResponse -> {
+                    closeTracingSpan(span, httpResponse);
                     future.complete(httpResponse.bodyAsJson(Itinerary.class));
-                }, future::fail);
+                }, throwable -> {
+                    closeTracingSpan(span, throwable);
+                    future.fail(throwable);
+                });
             };
             Function<Throwable, Itinerary> priceFlightFailback = throwable -> {
                 logger.log(Level.WARNING, "Fallback while obtaining price for " + flight, throwable);
@@ -260,14 +272,21 @@ public class Verticle extends AbstractVerticle {
         });
     }
 
-    private void traceOutgoingCall(RoutingContext routingContext, HttpRequest<Buffer> httpRequest) {
-        Span span = getActiveSpan(routingContext);
-        if (span != null) {
-            Tracer tracer = configuration.getTracer();
-            Map<String, String> headerAdditions = new HashMap<>();
-            tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
-            headerAdditions.forEach(httpRequest.headers()::add);
-        }
+    private Span traceOutgoingCall(HttpRequest<Buffer> httpRequest, RoutingContext routingContext, HttpMethod method, String url) {
+        Tracer tracer = configuration.getTracer();
+        Tracer.SpanBuilder spanBuilder = tracer.buildSpan("Outgoing HTTP request");
+        Span activeSpan = getActiveSpan(routingContext);
+        spanBuilder = spanBuilder.asChildOf(activeSpan);
+        Span span = spanBuilder.start();
+        Tags.SPAN_KIND.set(span, Tags.SPAN_KIND_CLIENT);
+        Tags.HTTP_URL.set(span, url);
+        Tags.HTTP_METHOD.set(span, method.name());
+
+        Map<String, String> headerAdditions = new HashMap<>();
+        tracer.inject(span.context(), Format.Builtin.HTTP_HEADERS, new TextMapInjectAdapter(headerAdditions));
+        headerAdditions.forEach(httpRequest.headers()::add);
+
+        return span;
     }
 
     private static void populateFormattedTimes(Flight[] flights, Map<String, Airport> airports) {
@@ -284,6 +303,21 @@ public class Verticle extends AbstractVerticle {
         formatter = formatter.withLocale(Locale.US);
         formatter = formatter.withZone(ZoneId.of(airport.getZoneId()));
         return formatter.format(departureTime);
+    }
+
+    private void closeTracingSpan(Span span, HttpResponse<Buffer> httpResponse) {
+        int status = httpResponse.statusCode();
+        Tags.HTTP_STATUS.set(span, status);
+        if (status >= 400) {
+            Tags.ERROR.set(span, true);
+        }
+        span.finish();
+    }
+
+    private void closeTracingSpan(Span span, Throwable throwable) {
+        Tags.ERROR.set(span, true);
+        span.log(WebSpanDecorator.StandardTags.exceptionLogs(throwable));
+        span.finish();
     }
 
     private Span getActiveSpan(RoutingContext routingContext) {

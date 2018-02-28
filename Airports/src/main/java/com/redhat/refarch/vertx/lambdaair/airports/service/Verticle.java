@@ -7,16 +7,14 @@ import java.util.logging.Logger;
 
 import com.redhat.refarch.vertx.lambdaair.airports.model.Airport;
 import com.uber.jaeger.Configuration;
-import com.uber.jaeger.Span;
+import io.opentracing.Span;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
-import io.vertx.core.Context;
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.Json;
@@ -28,21 +26,16 @@ public class Verticle extends AbstractVerticle {
     private static Logger logger = Logger.getLogger(Verticle.class.getName());
 
     @Override
-    public void init(Vertx vertx, Context context) {
-        super.init(vertx, context);
+    public void start(Future<Void> startFuture) {
         try {
             AirportsService.loadAirports();
+            ConfigStoreOptions store = new ConfigStoreOptions();
+            store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
+            ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
+            retriever.getConfig(result -> startWithConfig(startFuture, result));
         } catch (IOException e) {
-            throw new IllegalStateException(e);
+            startFuture.fail(e);
         }
-    }
-
-    @Override
-    public void start(Future<Void> startFuture) {
-        ConfigStoreOptions store = new ConfigStoreOptions();
-        store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
-        ConfigRetriever retriever = ConfigRetriever.create(vertx, new ConfigRetrieverOptions().addStore(store));
-        retriever.getConfig(result -> startWithConfig(startFuture, result));
     }
 
     private void startWithConfig(Future<Void> startFuture, AsyncResult<JsonObject> configResult) {

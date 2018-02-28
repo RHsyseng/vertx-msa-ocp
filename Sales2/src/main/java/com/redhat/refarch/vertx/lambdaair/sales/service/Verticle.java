@@ -6,7 +6,7 @@ import java.util.logging.Logger;
 
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.uber.jaeger.Configuration;
-import com.uber.jaeger.Span;
+import io.opentracing.Span;
 import io.opentracing.contrib.vertx.ext.web.TracingHandler;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
