@@ -79,9 +79,9 @@ public class Verticle extends AbstractVerticle {
         mergeIn(null, configResult.result().getMap());
 
         WebClientOptions options = new WebClientOptions();
-        int threadPoolSize = config().getInteger("pricing.pool.size");
-        logger.fine("Will price flights with a thread pool size of " + threadPoolSize);
-        options.setMaxPoolSize(threadPoolSize);
+        int connectionPoolSize = config().getInteger("pricing.pool.size");
+        logger.fine("Will price flights with a connection pool size of " + connectionPoolSize);
+        options.setMaxPoolSize(connectionPoolSize);
         webClient = WebClient.create(vertx, options);
 
         CircuitBreakerOptions circuitBreakerOptions = new CircuitBreakerOptions()
