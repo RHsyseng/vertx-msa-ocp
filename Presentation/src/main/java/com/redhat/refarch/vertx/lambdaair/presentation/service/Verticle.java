@@ -110,11 +110,11 @@ public class Verticle extends AbstractVerticle {
                 samplerConfiguration, reporterConfiguration);
 
         Router router = Router.router(vertx);
+        setupTracing(router);
         router.get("/health").handler(routingContext -> routingContext.response().end("OK"));
         router.get("/gateway/airportCodes").handler(this::getAirportCodes);
         router.get("/gateway/query").handler(this::query);
         router.get("/*").handler(StaticHandler.create("webapp"));
-        setupTracing(router);
         HttpServer httpServer = vertx.createHttpServer();
         httpServer.requestHandler(router::accept);
         int port = config().getInteger("http.port", 8080);
@@ -149,7 +149,7 @@ public class Verticle extends AbstractVerticle {
     private void setupTracing(Router router) {
         TracingHandler tracingHandler = new TracingHandler(configuration.getTracer());
         Handler<RoutingContext> wrapperHandler = routingContext -> tracingHandler.handle(routingContext.getDelegate());
-        router.route().order(-1).handler(wrapperHandler).failureHandler(wrapperHandler);
+        router.route().handler(wrapperHandler).failureHandler(wrapperHandler);
     }
 
     private void getAirportCodes(RoutingContext routingContext) {

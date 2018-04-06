@@ -81,9 +81,9 @@ public class Verticle extends AbstractVerticle {
         vertx.deployVerticle(new FlightSchedulingService(), deploymentOptions, deployResult -> {
             if (deployResult.succeeded()) {
                 Router router = Router.router(vertx);
+                setupTracing(router);
                 router.get("/health").handler(routingContext -> routingContext.response().end("OK"));
                 router.get("/query").handler(this::query);
-                setupTracing(router);
                 HttpServer httpServer = vertx.createHttpServer();
                 httpServer.requestHandler(router::accept);
                 int port = config().getInteger("http.port", 8080);
@@ -121,7 +121,7 @@ public class Verticle extends AbstractVerticle {
 
     private void setupTracing(Router router) {
         TracingHandler tracingHandler = new TracingHandler(configuration.getTracer());
-        router.route().order(-1).handler(tracingHandler).failureHandler(tracingHandler);
+        router.route().handler(tracingHandler).failureHandler(tracingHandler);
     }
 
     private void query(RoutingContext routingContext) {
