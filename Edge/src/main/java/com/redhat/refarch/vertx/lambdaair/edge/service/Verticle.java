@@ -54,7 +54,7 @@ public class Verticle extends AbstractVerticle {
             logger.log(Level.SEVERE, "Error proxying request", rc.failure());
             rc.response().setStatusCode(500).setStatusMessage(rc.failure().getMessage()).end();
         });
-        HttpServer httpServer = vertx.createHttpServer(new HttpServerOptions().setAcceptBacklog(10000));
+        HttpServer httpServer = vertx.createHttpServer(new HttpServerOptions());
         httpServer.requestHandler(router::accept);
         int port = config().getInteger("http.port", 8080);
         httpServer.listen(port, result -> {
