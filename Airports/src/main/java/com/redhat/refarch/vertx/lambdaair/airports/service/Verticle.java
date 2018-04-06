@@ -28,6 +28,7 @@ public class Verticle extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) {
         try {
+            //This type of call typically requires blocking code, but eager loading at service startup does not require it
             AirportsService.loadAirports();
             ConfigStoreOptions store = new ConfigStoreOptions();
             store.setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "app-config.yml"));
