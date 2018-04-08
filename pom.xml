@@ -18,6 +18,7 @@
         <module>Flights</module>
         <module>Presentation</module>
         <module>Sales</module>
+        <module>Sales2</module>
     </modules>
 
     <profiles>
