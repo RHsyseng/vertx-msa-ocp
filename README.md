@@ -1,5 +1,5 @@
 # Overview
-This repository contains the microservices application described, designed, and documented in the Red Hat reference architecture titled [Vert.x Microservices on Red Hat OpenShift Container Platform 3](https://access.redhat.com/documentation/en-us/reference_architectures/2018/html/vertx_microservices_on_red_hat_openshift_container_platform_3/)
+This repository contains the microservices application described, designed, and documented in the Red Hat reference architecture titled [Vert.x Microservices on Red Hat OpenShift Container Platform 3](https://access.redhat.com/documentation/en-us/reference_architectures/2018/html/vert.x_microservices_on_red_hat_openshift_container_platform_3/)
 
 # Build and Deployment
 First, clone this repository:
@@ -366,22 +366,32 @@ $ cat /mnt/vertx/edge/routing.js
 ````
 
 ````js
-if( mapper.getServiceName( request ) == "sales" )
-{
-	var ipAddress = mapper.getBaggageItem( request, "forwarded-for" );
-	mapper.fine( 'Got IP Address as ' + ipAddress );
-	if( ipAddress )
-	{
-		var lastDigit = ipAddress.substring( ipAddress.length - 1 );
-		mapper.fine( 'Got last digit as ' + lastDigit );
-		if( lastDigit % 2 == 0 )
-		{
-			mapper.info( 'Rerouting to B instance for IP Address ' + ipAddress );
-			//Even IP address, reroute for A/B testing:
-			hostAddress = mapper.getRoutedAddress( request, "http://sales2:8080" );
-		}
-	}
+vertx.eventBus().consumer("routing.js", function (message) {
+    var jsonObject = map( message.body() );
+    message.reply(jsonObject);
+});
+console.log("Loaded routing.js");
+
+function map(jsonObject) {
+    if( jsonObject["host"].startsWith("sales") )
+    {
+        var ipAddress = jsonObject["forwarded-for"];
+        console.log( 'Got IP Address as ' + ipAddress );
+        if( ipAddress )
+        {
+            var lastDigit = ipAddress.substring( ipAddress.length - 1 );
+            console.log( 'Got last digit as ' + lastDigit );
+            if( lastDigit % 2 != 0 )
+            {
+                console.log( 'Rerouting to B instance for IP Address ' + ipAddress );
+                //Odd IP address, reroute for A/B testing:
+                jsonObject["host"] = "sales2:8080";
+            }
+        }
+    }
+    return jsonObject;
 }
+
 ````
 
 This is a simple matter of editing the file and deploying a new version of the *edge* service to pick up the updated script:
